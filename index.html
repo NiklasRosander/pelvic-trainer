@@ -87,22 +87,48 @@
   .plan-row:not(:last-child) { border-bottom: 1px solid var(--border); }
   .plan-row span:first-child { color: var(--text); }
 
-  .stats-card {
+  .calendar-card {
     width: 100%;
     max-width: 340px;
-    display: flex;
-    gap: 12px;
-  }
-  .stat-box {
-    flex: 1;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 14px;
+    padding: 16px 18px;
+  }
+  .calendar-title {
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .calendar-weekdays, .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+  }
+  .calendar-weekdays { margin-bottom: 6px; }
+  .calendar-weekdays span {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
     text-align: center;
   }
-  .stat-value { font-size: 24px; font-weight: 700; color: var(--teal); }
-  .stat-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .calendar-grid { row-gap: 6px; }
+  .cal-cell {
+    width: 32px;
+    height: 32px;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    border-radius: 50%;
+  }
+  .cal-blank { visibility: hidden; }
+  .cal-done { background: var(--teal); color: #04211d; font-weight: 700; }
+  .cal-missed { border: 1px solid var(--danger-dim); color: var(--danger); }
+  .cal-today { box-shadow: 0 0 0 2px var(--teal) inset; }
 
   /* ---------- Buttons ---------- */
   .btn {
@@ -254,15 +280,12 @@
       <div class="plan-row"><span>Phase 3</span><span>5 &times; 2s squeeze (100%) / 2s relax</span></div>
     </div>
 
-    <div class="stats-card">
-      <div class="stat-box">
-        <div class="stat-value" id="statSessions">0</div>
-        <div class="stat-label">Sessions</div>
+    <div class="calendar-card">
+      <div class="calendar-title" id="calendarTitle"></div>
+      <div class="calendar-weekdays">
+        <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
       </div>
-      <div class="stat-box">
-        <div class="stat-value" id="statStreak">0</div>
-        <div class="stat-label">Day streak</div>
-      </div>
+      <div class="calendar-grid" id="calendarGrid"></div>
     </div>
 
     <button class="btn btn-primary" id="btnStart">Start</button>
@@ -338,8 +361,8 @@
     complete: document.getElementById("screen-complete")
   };
   const el = {
-    statSessions: document.getElementById("statSessions"),
-    statStreak: document.getElementById("statStreak"),
+    calendarTitle: document.getElementById("calendarTitle"),
+    calendarGrid: document.getElementById("calendarGrid"),
     btnStart: document.getElementById("btnStart"),
     btnPauseResume: document.getElementById("btnPauseResume"),
     btnStop: document.getElementById("btnStop"),
@@ -382,10 +405,9 @@
     osc.start(now);
     osc.stop(now + durationMs / 1000);
   }
-  function playTighten(intensity) {
+  function tightenBeep(intensity) {
     const freq = intensity === 100 ? 880 : 760;
     beep(freq, 160, 0.18);
-    setTimeout(() => beep(freq, 160, 0.18), 200);
   }
   function playRelax() {
     beep(440, 220, 0.14);
@@ -417,24 +439,35 @@
     history.push(new Date().toISOString());
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   }
-  function computeStreak(history) {
-    const days = new Set(history.map(iso => localDateStr(new Date(iso))));
-    let cursor = new Date();
-    if (!days.has(localDateStr(cursor))) {
-      cursor = new Date(cursor.getTime() - 86400000);
-      if (!days.has(localDateStr(cursor))) return 0;
-    }
-    let streak = 0;
-    while (days.has(localDateStr(cursor))) {
-      streak++;
-      cursor = new Date(cursor.getTime() - 86400000);
-    }
-    return streak;
-  }
-  function refreshStats() {
+  function renderCalendar() {
     const history = loadHistory();
-    el.statSessions.textContent = history.length;
-    el.statStreak.textContent = computeStreak(history);
+    const sessionDays = new Set(history.map(iso => localDateStr(new Date(iso))));
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const todayStr = localDateStr(now);
+
+    el.calendarTitle.textContent = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const leadingBlanks = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first grid
+
+    el.calendarGrid.innerHTML = "";
+    for (let i = 0; i < leadingBlanks; i++) {
+      const blank = document.createElement("div");
+      blank.className = "cal-cell cal-blank";
+      el.calendarGrid.appendChild(blank);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = localDateStr(new Date(year, month, day));
+      const cell = document.createElement("div");
+      cell.className = "cal-cell";
+      if (sessionDays.has(dateStr)) cell.classList.add("cal-done");
+      else if (dateStr < todayStr) cell.classList.add("cal-missed");
+      if (dateStr === todayStr) cell.classList.add("cal-today");
+      cell.textContent = day;
+      el.calendarGrid.appendChild(cell);
+    }
   }
 
   // ---------- Timer engine ----------
@@ -493,7 +526,7 @@
     releaseWakeLock();
     sessionState = "completed";
     saveCompletedSession();
-    refreshStats();
+    renderCalendar();
     el.completeSummary.textContent = "All three phases done. Great work!";
     showScreen("complete");
   }
@@ -506,7 +539,6 @@
       el.gaugeCircle.classList.add("tighten", "intensity-" + step.intensity);
       el.instructionLabel.textContent = "SQUEEZE";
       el.intensityLabel.textContent = step.intensity + "%";
-      playTighten(step.intensity);
     } else {
       el.gaugeCircle.classList.add("relax");
       el.instructionLabel.textContent = "RELAX";
@@ -541,6 +573,7 @@
     if (remaining !== lastDisplayedSecond) {
       lastDisplayedSecond = remaining;
       el.countdownLabel.textContent = remaining;
+      if (step.type === "tighten") tightenBeep(step.intensity);
     }
     el.progressFill.style.width = ((elapsedSec / totalDuration) * 100).toFixed(2) + "%";
 
@@ -554,9 +587,9 @@
     else if (sessionState === "paused") resumeSession();
   });
   el.btnStop.addEventListener("click", stopSession);
-  el.btnDone.addEventListener("click", () => { showScreen("home"); refreshStats(); });
+  el.btnDone.addEventListener("click", () => { showScreen("home"); renderCalendar(); });
 
-  refreshStats();
+  renderCalendar();
 })();
 </script>
 </body>
