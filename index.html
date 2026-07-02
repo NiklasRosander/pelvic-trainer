@@ -95,12 +95,29 @@
     border-radius: 16px;
     padding: 16px 18px;
   }
+  .calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
   .calendar-title {
     font-size: 14px;
     font-weight: 600;
     text-align: center;
-    margin-bottom: 12px;
   }
+  .cal-nav {
+    appearance: none;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 20px;
+    line-height: 1;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .cal-nav:active { color: var(--text); }
+  .cal-nav-hidden { visibility: hidden; }
   .calendar-weekdays, .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -281,7 +298,11 @@
     </div>
 
     <div class="calendar-card">
-      <div class="calendar-title" id="calendarTitle"></div>
+      <div class="calendar-header">
+        <button class="cal-nav" id="calPrev" aria-label="Previous month">&#8249;</button>
+        <div class="calendar-title" id="calendarTitle"></div>
+        <button class="cal-nav" id="calNext" aria-label="Next month">&#8250;</button>
+      </div>
       <div class="calendar-weekdays">
         <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
       </div>
@@ -363,6 +384,8 @@
   const el = {
     calendarTitle: document.getElementById("calendarTitle"),
     calendarGrid: document.getElementById("calendarGrid"),
+    calPrev: document.getElementById("calPrev"),
+    calNext: document.getElementById("calNext"),
     btnStart: document.getElementById("btnStart"),
     btnPauseResume: document.getElementById("btnPauseResume"),
     btnStop: document.getElementById("btnStop"),
@@ -439,18 +462,22 @@
     history.push(new Date().toISOString());
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
   }
+  const today0 = new Date();
+  let viewedYear = today0.getFullYear();
+  let viewedMonth = today0.getMonth();
+
   function renderCalendar() {
     const history = loadHistory();
     const sessionDays = new Set(history.map(iso => localDateStr(new Date(iso))));
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const todayStr = localDateStr(now);
+    const today = new Date();
+    const todayStr = localDateStr(today);
+    const isCurrentMonth = viewedYear === today.getFullYear() && viewedMonth === today.getMonth();
 
-    el.calendarTitle.textContent = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    el.calendarTitle.textContent = new Date(viewedYear, viewedMonth, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    el.calNext.classList.toggle("cal-nav-hidden", isCurrentMonth);
 
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const leadingBlanks = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first grid
+    const daysInMonth = new Date(viewedYear, viewedMonth + 1, 0).getDate();
+    const leadingBlanks = (new Date(viewedYear, viewedMonth, 1).getDay() + 6) % 7; // Monday-first grid
 
     el.calendarGrid.innerHTML = "";
     for (let i = 0; i < leadingBlanks; i++) {
@@ -459,7 +486,7 @@
       el.calendarGrid.appendChild(blank);
     }
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = localDateStr(new Date(year, month, day));
+      const dateStr = localDateStr(new Date(viewedYear, viewedMonth, day));
       const cell = document.createElement("div");
       cell.className = "cal-cell";
       if (sessionDays.has(dateStr)) cell.classList.add("cal-done");
@@ -468,6 +495,13 @@
       cell.textContent = day;
       el.calendarGrid.appendChild(cell);
     }
+  }
+
+  function shiftMonth(delta) {
+    viewedMonth += delta;
+    if (viewedMonth < 0) { viewedMonth = 11; viewedYear--; }
+    else if (viewedMonth > 11) { viewedMonth = 0; viewedYear++; }
+    renderCalendar();
   }
 
   // ---------- Timer engine ----------
@@ -526,6 +560,8 @@
     releaseWakeLock();
     sessionState = "completed";
     saveCompletedSession();
+    viewedYear = today0.getFullYear();
+    viewedMonth = today0.getMonth();
     renderCalendar();
     el.completeSummary.textContent = "All three phases done. Great work!";
     showScreen("complete");
@@ -588,6 +624,12 @@
   });
   el.btnStop.addEventListener("click", stopSession);
   el.btnDone.addEventListener("click", () => { showScreen("home"); renderCalendar(); });
+  el.calPrev.addEventListener("click", () => shiftMonth(-1));
+  el.calNext.addEventListener("click", () => {
+    const today = new Date();
+    if (viewedYear === today.getFullYear() && viewedMonth === today.getMonth()) return;
+    shiftMonth(1);
+  });
 
   renderCalendar();
 })();
